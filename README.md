@@ -47,30 +47,9 @@ agent-team log gemini-1
 
 All agents listed on [agentclientprotocol.com](https://agentclientprotocol.com/get-started/agents):
 
-| Type | Command | ACP Mode |
-|------|---------|----------|
-| gemini | `gemini` | `--experimental-acp` |
-| copilot | `copilot` | `--acp` |
-| goose | `goose` | `acp` subcommand |
-| claude | `claude-code-acp` | Adapter* |
-| codex | `codex-acp` | Adapter* |
-| auggie | `auggie` | `--acp` |
-| kiro | `kiro-cli` | `acp` subcommand |
-| cline | `cline` | `--acp` |
-| blackbox | `blackbox` | `--experimental-acp` |
-| openhands | `openhands` | `acp` subcommand |
-| qoder | `qodercli` | `--acp` |
-| opencode | `opencode` | `acp` subcommand |
-| kimi | `kimi` | `acp` subcommand |
-| vibe | `vibe-acp` | Standalone binary |
-| qwen | `qwen` | `--acp` |
-| cagent | `cagent` | `acp` subcommand |
-| fast-agent | `fast-agent-acp` | Standalone binary |
-| stakpak | `stakpak` | `acp` subcommand |
-| vtcode | `vtcode` | `acp` subcommand |
-| pi | `pi-acp` | Adapter* |
+`gemini` `copilot` `goose` `claude`\* `codex`\* `auggie` `kiro` `cline` `blackbox` `openhands` `qoder` `opencode` `kimi` `vibe` `qwen` `cagent` `fast-agent` `stakpak` `vtcode` `pi`\*
 
-\* Agents marked **Adapter** require a separate wrapper binary. agent-team will prompt you with install instructions if the adapter is not found in PATH.
+\* Requires a separate adapter binary. agent-team will prompt you with install instructions if not found in PATH.
 
 ## Commands
 

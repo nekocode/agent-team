@@ -47,30 +47,9 @@ agent-team log gemini-1
 
 支持 [agentclientprotocol.com](https://agentclientprotocol.com/get-started/agents) 列出的所有 agent：
 
-| 类型 | 命令 | ACP 模式 |
-|------|------|----------|
-| gemini | `gemini` | `--experimental-acp` |
-| copilot | `copilot` | `--acp` |
-| goose | `goose` | `acp` 子命令 |
-| claude | `claude-code-acp` | 适配器* |
-| codex | `codex-acp` | 适配器* |
-| auggie | `auggie` | `--acp` |
-| kiro | `kiro-cli` | `acp` 子命令 |
-| cline | `cline` | `--acp` |
-| blackbox | `blackbox` | `--experimental-acp` |
-| openhands | `openhands` | `acp` 子命令 |
-| qoder | `qodercli` | `--acp` |
-| opencode | `opencode` | `acp` 子命令 |
-| kimi | `kimi` | `acp` 子命令 |
-| vibe | `vibe-acp` | 独立二进制 |
-| qwen | `qwen` | `--acp` |
-| cagent | `cagent` | `acp` 子命令 |
-| fast-agent | `fast-agent-acp` | 独立二进制 |
-| stakpak | `stakpak` | `acp` 子命令 |
-| vtcode | `vtcode` | `acp` 子命令 |
-| pi | `pi-acp` | 适配器* |
+`gemini` `copilot` `goose` `claude`\* `codex`\* `auggie` `kiro` `cline` `blackbox` `openhands` `qoder` `opencode` `kimi` `vibe` `qwen` `cagent` `fast-agent` `stakpak` `vtcode` `pi`\*
 
-\* 标记为**适配器**的 agent 需要安装额外的 wrapper 二进制。如果 PATH 中找不到适配器，agent-team 会提示安装命令。
+\* 需要安装额外的适配器二进制。如果 PATH 中找不到，agent-team 会提示安装命令。
 
 ## 命令
 
