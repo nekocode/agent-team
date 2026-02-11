@@ -1,16 +1,15 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 // ==================== JSON Lines 读取端 ====================
 
-pub struct JsonLineReader {
-    reader: BufReader<OwnedReadHalf>,
+pub struct JsonLineReader<R> {
+    reader: BufReader<R>,
 }
 
-impl JsonLineReader {
-    pub fn new(read_half: OwnedReadHalf) -> Self {
+impl<R: AsyncRead + Unpin> JsonLineReader<R> {
+    pub fn new(read_half: R) -> Self {
         Self {
             reader: BufReader::new(read_half),
         }
@@ -35,12 +34,12 @@ impl JsonLineReader {
 
 // ==================== JSON Lines 写入端 ====================
 
-pub struct JsonLineWriter {
-    writer: OwnedWriteHalf,
+pub struct JsonLineWriter<W> {
+    writer: W,
 }
 
-impl JsonLineWriter {
-    pub fn new(write_half: OwnedWriteHalf) -> Self {
+impl<W: AsyncWrite + Unpin> JsonLineWriter<W> {
+    pub fn new(write_half: W) -> Self {
         Self {
             writer: write_half,
         }
@@ -64,6 +63,7 @@ impl JsonLineWriter {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
     use crate::protocol::messages::{SessionRequest, SessionResponse, AgentSummary};

@@ -6,7 +6,10 @@ use std::time::Duration;
 
 use agent_client_protocol::{self as acp, Agent};
 use anyhow::{Context, Result};
+#[cfg(unix)]
 use tokio::net::UnixListener;
+#[cfg(not(unix))]
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::acp_client::team_client::PermissionDecision;
@@ -16,6 +19,11 @@ use crate::protocol::messages::{OutputEntry, OutputType, SessionRequest, Session
 use crate::protocol::transport::{JsonLineReader, JsonLineWriter};
 
 const SHUTDOWN_TIMEOUT_SECS: u64 = 3;
+
+#[cfg(unix)]
+type SessionStream = tokio::net::UnixStream;
+#[cfg(not(unix))]
+type SessionStream = tokio::net::TcpStream;
 
 // ==================== stdout 事件 ====================
 
@@ -44,8 +52,20 @@ pub async fn run(
     cleanup_socket(&sock_path);
 
     // 先 bind listener，让 socket 文件尽早可见
+    #[cfg(unix)]
     let listener = UnixListener::bind(&sock_path)
         .with_context(|| format!("Failed to bind: {}", sock_path.display()))?;
+
+    #[cfg(not(unix))]
+    let listener = {
+        let l = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind TCP")?;
+        let port = l.local_addr()?.port();
+        std::fs::write(&sock_path, port.to_string())
+            .with_context(|| format!("Failed to write port file: {}", sock_path.display()))?;
+        l
+    };
 
     // 事件通道
     let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
@@ -168,7 +188,7 @@ pub async fn run(
 // ==================== 连接处理 ====================
 
 async fn handle_connection(
-    stream: tokio::net::UnixStream,
+    stream: SessionStream,
     handle: Rc<RefCell<AgentHandle>>,
     config: Rc<TeamConfig>,
     event_tx: mpsc::UnboundedSender<Event>,

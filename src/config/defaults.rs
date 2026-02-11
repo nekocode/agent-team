@@ -30,6 +30,14 @@ pub struct TeamConfig {
     pub socket_dir: PathBuf,
 }
 
+/// Unix: uid, Windows: pid
+fn platform_id() -> u32 {
+    #[cfg(unix)]
+    { unsafe { libc::getuid() } }
+    #[cfg(not(unix))]
+    { std::process::id() }
+}
+
 impl Default for TeamConfig {
     fn default() -> Self {
         let mut agent_types = HashMap::new();
@@ -114,9 +122,9 @@ impl Default for TeamConfig {
             );
         }
 
-        let uid = unsafe { libc::getuid() };
+        let id = platform_id();
         let socket_dir =
-            std::env::temp_dir().join(format!("agent-team-{}", uid));
+            std::env::temp_dir().join(format!("agent-team-{}", id));
 
         Self {
             auto_approve: AutoApprovePolicy::Never,

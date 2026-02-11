@@ -4,7 +4,10 @@ mod update;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+#[cfg(unix)]
 use tokio::net::UnixStream;
+#[cfg(not(unix))]
+use tokio::net::TcpStream;
 
 use crate::config::TeamConfig;
 use crate::protocol::messages::{SessionRequest, SessionResponse};
@@ -304,14 +307,32 @@ async fn send(
     req: SessionRequest,
 ) -> Result<SessionResponse> {
     let sock_path = config.session_socket(name);
+
+    #[cfg(unix)]
     let stream = match UnixStream::connect(&sock_path).await {
         Ok(s) => s,
         Err(e) => {
-            // 进程已死但 socket 残留 → 清理
             let _ = std::fs::remove_file(&sock_path);
             return Err(e).with_context(|| {
                 format!("Cannot connect to agent '{}'. Is it running?", name)
             });
+        }
+    };
+
+    #[cfg(not(unix))]
+    let stream = {
+        let port_str = std::fs::read_to_string(&sock_path)
+            .with_context(|| format!("Cannot read port file for '{}'", name))?;
+        let port: u16 = port_str.trim().parse()
+            .with_context(|| format!("Invalid port in {}", sock_path.display()))?;
+        match TcpStream::connect(("127.0.0.1", port)).await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = std::fs::remove_file(&sock_path);
+                return Err(e).with_context(|| {
+                    format!("Cannot connect to agent '{}'. Is it running?", name)
+                });
+            }
         }
     };
 
