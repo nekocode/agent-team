@@ -1,6 +1,6 @@
 [package]
 name = "agent-team"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Multi-agent CLI orchestrator via ACP protocol"
 license = "MIT"
