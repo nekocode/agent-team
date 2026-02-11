@@ -4,6 +4,8 @@
 
 [English](README.md)
 
+![Cover](cover.jpg)
+
 ## 为什么需要
 
 每个编程 agent 都有自己的 CLI、自己的工作流、自己的一套玩法。agent-team 给它们一个统一的控制面：

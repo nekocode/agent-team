@@ -4,6 +4,8 @@ A multi-agent CLI orchestrator via the [ACP](https://github.com/anthropics/agent
 
 [中文文档](README.zh-CN.md)
 
+![Cover](cover.jpg)
+
 ## Why
 
 Every coding agent has its own CLI, its own workflow, its own way of doing things. agent-team gives them a single control plane:
