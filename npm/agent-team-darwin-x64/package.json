@@ -1,0 +1,13 @@
+{
+  "name": "@nekocode/agent-team-darwin-x64",
+  "version": "0.1.0",
+  "description": "agent-team binary for macOS x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nekocode/agent-team"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/agent-team"]
+}

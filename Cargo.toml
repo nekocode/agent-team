@@ -1,0 +1,45 @@
+[package]
+name = "agent-team"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-agent CLI orchestrator via ACP protocol"
+license = "MIT"
+repository = "https://github.com/nekocode/agent-team"
+keywords = ["cli", "agent", "acp", "orchestrator", "ai"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+
+# ==================== mock agent 二进制 ====================
+[[bin]]
+name = "mock-agent"
+path = "src/bin/mock_agent.rs"
+
+[dependencies]
+# ACP 协议
+agent-client-protocol = "0.9"
+agent-client-protocol-schema = "0.10"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging（仅 RUST_LOG 调试用）
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

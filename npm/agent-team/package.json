@@ -1,0 +1,35 @@
+{
+  "name": "agent-team",
+  "version": "0.1.0",
+  "description": "Multi-agent CLI orchestrator via ACP protocol",
+  "keywords": ["cli", "agent", "acp", "orchestrator", "ai"],
+  "license": "MIT",
+  "author": "nekocode",
+  "homepage": "https://github.com/nekocode/agent-team",
+  "bugs": {
+    "url": "https://github.com/nekocode/agent-team/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nekocode/agent-team"
+  },
+  "bin": {
+    "agent-team": "bin/agent-team.js"
+  },
+  "files": [
+    "bin",
+    "install.js"
+  ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "optionalDependencies": {
+    "@nekocode/agent-team-darwin-arm64": "0.1.0",
+    "@nekocode/agent-team-darwin-x64": "0.1.0",
+    "@nekocode/agent-team-linux-x64": "0.1.0",
+    "@nekocode/agent-team-win32-x64": "0.1.0"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}

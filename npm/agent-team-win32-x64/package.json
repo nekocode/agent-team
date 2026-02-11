@@ -1,0 +1,13 @@
+{
+  "name": "@nekocode/agent-team-win32-x64",
+  "version": "0.1.0",
+  "description": "agent-team binary for Windows x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nekocode/agent-team"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/agent-team.exe"]
+}
