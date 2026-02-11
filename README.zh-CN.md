@@ -70,7 +70,7 @@ agent-team log gemini-1
 | `ask <name> [text]` | 发送 prompt 并等待回复。`-f` 附加文件 |
 | `log <name>` | 查看对话记录。`-n N` 最后 N 条，`-a` 仅 agent 输出 |
 | `cancel <name>` | 取消当前任务 |
-| `allow/deny <name>` | 审批权限请求。`--all` 批量审批 |
+| `allow/deny <name>` | 审批权限请求 |
 
 ### 配置
 
@@ -79,6 +79,43 @@ agent-team log gemini-1
 | `mode <name> <mode>` | 切换 agent 模式（ask/code/architect） |
 | `set <name> <key> <val>` | 修改运行时配置 |
 | `update` | 通过 npm 自更新 |
+
+## 配合 AI Agent 使用
+
+### 直接告诉 agent
+
+最简单的方式 — 直接让 agent 去用：
+
+```
+使用 agent-team 管理编程 agent。运行 agent-team --help 查看用法。
+```
+
+`--help` 输出足够详细，大多数 agent 看完就能上手。
+
+### AGENTS.md / CLAUDE.md
+
+写到项目指令文件里，效果更稳定：
+
+````markdown
+## 多 Agent 编排
+
+使用 `agent-team` 启动和协调编程 agent。运行 `agent-team --help` 查看所有选项。
+
+用法：
+- `agent-team add gemini -b` - 后台启动 Gemini agent
+- `agent-team ls` - 列出运行中的 agent
+- `agent-team ask <name> "task"` - 发送 prompt 并等待回复
+- `agent-team log <name> -a -n 1` - 查看最后一条 agent 回复
+- `agent-team cancel <name>` - 取消当前任务
+- `agent-team allow/deny <name>` - 审批权限请求
+- `agent-team rm <name>` - 关闭 agent
+
+典型流程：
+1. 启动 agent：`agent-team add gemini -b && agent-team add copilot -b`
+2. 分配任务：`agent-team ask gemini-1 "重构 auth 模块"`
+3. 查看进展：`agent-team log gemini-1`
+4. 清理：`agent-team rm --all`
+````
 
 ## 许可证
 

@@ -191,31 +191,10 @@ async fn run_async(cli: Cli) -> Result<()> {
             display::print_session_response(&resp);
         }
 
-        Command::Allow { name, all } => {
-            if all {
-                let names = config.scan_sessions();
-                let mut total = 0;
-                for n in &names {
-                    if let Ok(SessionResponse::Ok { .. }) =
-                        send(&config, n, SessionRequest::ApprovePermission).await
-                    {
-                        total += 1;
-                    }
-                }
-                println!("Allowed {} permissions", total);
-            } else {
-                let name = name.unwrap_or_default();
-                if name.is_empty() {
-                    anyhow::bail!("Specify agent name or use --all");
-                }
-                let resp = send(
-                    &config,
-                    &name,
-                    SessionRequest::ApprovePermission,
-                )
-                .await?;
-                display::print_session_response(&resp);
-            }
+        Command::Allow { name } => {
+            let resp =
+                send(&config, &name, SessionRequest::ApprovePermission).await?;
+            display::print_session_response(&resp);
         }
 
         Command::Deny { name } => {

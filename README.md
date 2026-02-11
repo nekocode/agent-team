@@ -70,7 +70,7 @@ All agents listed on [agentclientprotocol.com](https://agentclientprotocol.com/g
 | `ask <name> [text]` | Send prompt and wait for response. `-f` to attach files |
 | `log <name>` | Read conversation. `-n N` for last N messages, `-a` for agent-only |
 | `cancel <name>` | Cancel current task |
-| `allow/deny <name>` | Approve or reject permission requests. `--all` for batch |
+| `allow/deny <name>` | Approve or reject permission request |
 
 ### Configuration
 
@@ -79,6 +79,43 @@ All agents listed on [agentclientprotocol.com](https://agentclientprotocol.com/g
 | `mode <name> <mode>` | Switch agent mode (ask/code/architect) |
 | `set <name> <key> <val>` | Change runtime config |
 | `update` | Self-update via npm |
+
+## Usage with AI Agents
+
+### Just ask the agent
+
+The simplest approach - just tell your agent to use it:
+
+```
+Use agent-team to manage coding agents. Run agent-team --help for usage.
+```
+
+The `--help` output is comprehensive and most agents can figure it out from there.
+
+### AGENTS.md / CLAUDE.md
+
+For more consistent results, add to your project instructions:
+
+````markdown
+## Multi-Agent Orchestration
+
+Use `agent-team` to spin up and coordinate coding agents. Run `agent-team --help` for all options.
+
+Usage:
+- `agent-team add gemini -b` - Start a Gemini agent in background
+- `agent-team ls` - List running agents
+- `agent-team ask <name> "task"` - Send a prompt and wait for response
+- `agent-team log <name> -a -n 1` - Read last agent response
+- `agent-team cancel <name>` - Cancel current task
+- `agent-team allow/deny <name>` - Approve or reject permission request
+- `agent-team rm <name>` - Shut down agent
+
+Typical workflow:
+1. Start agents: `agent-team add gemini -b && agent-team add copilot -b`
+2. Assign tasks: `agent-team ask gemini-1 "Refactor auth module"`
+3. Check progress: `agent-team log gemini-1`
+4. Clean up: `agent-team rm --all`
+````
 
 ## License
 

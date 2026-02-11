@@ -229,7 +229,7 @@ main.rs ──► cli ──► protocol, config, session::server
 | `ask <name> [text]` | Prompt → 轮询等待 | 轮询 GetStatus + GetOutput(last=1)。省略 text 从 stdin 读取。`-f` 附加文件 |
 | `log <name>` | GetOutput → 目标 socket | `-n N` 最后 N 条消息，`-a` 仅 agent 输出 |
 | `cancel <name>` | Cancel | 取消当前任务 |
-| `allow/deny <name>` | 权限审批 | `--all` 批量审批 |
+| `allow/deny <name>` | 权限审批 | |
 | `info <name>` | GetStatus | 详细信息（含 agent_info） |
 | `restart <name>` | Restart | 保留配置重启 |
 | `mode <name> <mode>` | SetMode | 切换 agent 模式（ask/code/architect） |

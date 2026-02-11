@@ -82,12 +82,8 @@ pub enum Command {
 
     /// Allow pending permission
     Allow {
-        /// Agent name (or --all for all agents)
-        name: Option<String>,
-
-        /// Allow all pending permissions for all agents
-        #[arg(long)]
-        all: bool,
+        /// Agent name
+        name: String,
     },
 
     /// Deny pending permission
