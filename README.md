@@ -6,11 +6,11 @@ A multi-agent CLI orchestrator via the [ACP](https://github.com/anthropics/agent
 
 ## Why
 
-Working with multiple AI coding agents today means juggling separate terminals, contexts, and workflows. agent-team unifies them:
+Every coding agent has its own CLI, its own workflow, its own way of doing things. agent-team gives them a single control plane:
 
-- **One protocol**: All agents speak ACP — a standard interface for prompting, cancelling, permissions, and configuration
+- **One interface for all agents**: Prompt, cancel, approve permissions, configure — the same commands work across 20+ agents
 - **Independent sessions**: Each agent runs in its own process with its own UDS socket. No shared state, no interference
-- **Remote control**: Send prompts, review permissions, read logs — all from any terminal
+- **Any terminal, any agent**: Send prompts, review permissions, read logs — all from wherever you are
 
 ## Install
 
