@@ -1,6 +1,6 @@
 # agent-team
 
-A multi-agent CLI orchestrator via the [ACP](https://github.com/anthropics/agent-client-protocol) (Agent Client Protocol). Manage 20+ coding agents from one terminal.
+A multi-agent CLI orchestrator via the [ACP](https://agentclientprotocol.com/get-started/introduction) (Agent Client Protocol). Manage 20+ coding agents from one terminal.
 
 [中文文档](README.zh-CN.md)
 

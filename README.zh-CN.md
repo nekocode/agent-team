@@ -1,6 +1,6 @@
 # agent-team
 
-多 Agent CLI 编排器，基于 [ACP](https://github.com/anthropics/agent-client-protocol)（Agent Client Protocol）协议。在一个终端统一管理 20+ 编程 Agent。
+多 Agent CLI 编排器，基于 [ACP](https://agentclientprotocol.com/get-started/introduction)（Agent Client Protocol）协议。在一个终端统一管理 20+ 编程 Agent。
 
 [English](README.md)
 
