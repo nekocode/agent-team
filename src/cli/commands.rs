@@ -36,8 +36,8 @@ pub enum Command {
 
     /// Shut down an agent
     Rm {
-        /// Agent name
-        name: String,
+        /// Agent name (required unless --all)
+        name: Option<String>,
 
         /// Shut down all agents
         #[arg(long)]
@@ -127,4 +127,62 @@ pub enum Command {
 
     /// Update agent-team to latest version
     Update,
+}
+
+// ==================== 测试 ====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn rm_with_name() {
+        let cli = Cli::parse_from(["agent-team", "rm", "foo"]);
+        match cli.command {
+            Command::Rm { name, all } => {
+                assert_eq!(name.as_deref(), Some("foo"));
+                assert!(!all);
+            }
+            _ => panic!("expected Rm"),
+        }
+    }
+
+    #[test]
+    fn rm_all_without_name() {
+        let cli = Cli::parse_from(["agent-team", "rm", "--all"]);
+        match cli.command {
+            Command::Rm { name, all } => {
+                assert!(name.is_none());
+                assert!(all);
+            }
+            _ => panic!("expected Rm"),
+        }
+    }
+
+    #[test]
+    fn rm_all_with_name_ignored() {
+        let cli = Cli::parse_from(["agent-team", "rm", "--all", "foo"]);
+        match cli.command {
+            Command::Rm { name, all } => {
+                assert_eq!(name.as_deref(), Some("foo"));
+                assert!(all);
+            }
+            _ => panic!("expected Rm"),
+        }
+    }
+
+    #[test]
+    fn rm_no_args_fails() {
+        // 没有 name 也没有 --all 时 clap 仍能解析（name 是 Option），
+        // 业务层校验在 run_async 中处理
+        let cli = Cli::parse_from(["agent-team", "rm"]);
+        match cli.command {
+            Command::Rm { name, all } => {
+                assert!(name.is_none());
+                assert!(!all);
+            }
+            _ => panic!("expected Rm"),
+        }
+    }
 }

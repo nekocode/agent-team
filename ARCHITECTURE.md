@@ -23,7 +23,8 @@ agent-team/
 │   ├── bin/
 │   │   └── mock_agent.rs        # 测试用 ACP echo agent（Agent trait 实现）
 │   ├── cli/
-│   │   ├── mod.rs               # parse() + run()，session UDS 通信
+│   │   ├── mod.rs               # parse() + run()，命令分发 + prompt 轮询
+│   │   ├── client.rs            # SessionClient：复用连接的 session 通信层
 │   │   ├── commands.rs          # clap derive 命令定义
 │   │   ├── display.rs           # 终端输出格式化（纯文本对齐）
 │   │   └── update.rs            # 自更新：npm view 查版本 + npm install -g
@@ -305,5 +306,5 @@ main.rs ──► cli ──► protocol, config, session::server
 
 ## 测试
 
-- **59 单元测试**：messages 6、transport 3、config 11、agent 11、server_tests 14、display 15、team_client 8、acp_client 1、update 4
+- **65 单元测试**：messages 6、transport 3、config 11、agent 11、server_tests 14、display 15、team_client 8、acp_client 1、update 4、commands 4、client 2
 - **6 集成测试**：独立 session + mock agent，覆盖 status、prompt/output（含 last + agent_only）、cancel、restart、graceful shutdown、output last round

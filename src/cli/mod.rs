@@ -1,17 +1,13 @@
+pub mod client;
 mod commands;
 mod display;
 mod update;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-#[cfg(unix)]
-use tokio::net::UnixStream;
-#[cfg(not(unix))]
-use tokio::net::TcpStream;
 
 use crate::config::TeamConfig;
 use crate::protocol::messages::{SessionRequest, SessionResponse};
-use crate::protocol::transport::{JsonLineReader, JsonLineWriter};
 
 pub use commands::{Cli, Command};
 
@@ -96,15 +92,19 @@ async fn run_async(cli: Cli) -> Result<()> {
 
         Command::Rm { name, all } => {
             if all {
-                // 扫描所有 socket，逐个 Shutdown
                 let names = config.scan_sessions();
                 if names.is_empty() {
                     println!("No agents running");
                     return Ok(());
                 }
+                // 并行 Shutdown
+                let futs: Vec<_> = names.iter().map(|n| async {
+                    (n.as_str(), client::send(&config, n, SessionRequest::Shutdown).await)
+                }).collect();
+                let results = futures::future::join_all(futs).await;
                 let mut count = 0;
-                for n in &names {
-                    match send(&config, n, SessionRequest::Shutdown).await {
+                for (n, result) in results {
+                    match result {
                         Ok(resp) => {
                             display::print_session_response(&resp);
                             count += 1;
@@ -114,7 +114,10 @@ async fn run_async(cli: Cli) -> Result<()> {
                 }
                 println!("Shut down {} agents", count);
             } else {
-                let resp = send(&config, &name, SessionRequest::Shutdown).await?;
+                let name = name.ok_or_else(|| {
+                    anyhow::anyhow!("Agent name required. Use --all to shut down all agents")
+                })?;
+                let resp = client::send(&config, &name, SessionRequest::Shutdown).await?;
                 display::print_session_response(&resp);
             }
         }
@@ -125,9 +128,14 @@ async fn run_async(cli: Cli) -> Result<()> {
                 println!("No agents running");
                 return Ok(());
             }
+            // 并行 GetStatus
+            let futs: Vec<_> = names.iter().map(|n| async {
+                (n.as_str(), client::send(&config, n, SessionRequest::GetStatus).await)
+            }).collect();
+            let results = futures::future::join_all(futs).await;
             let mut summaries = vec![];
-            for n in &names {
-                match send(&config, n, SessionRequest::GetStatus).await {
+            for (n, result) in results {
+                match result {
                     Ok(SessionResponse::Status { summary }) => {
                         summaries.push(summary);
                     }
@@ -135,7 +143,6 @@ async fn run_async(cli: Cli) -> Result<()> {
                         eprintln!("Error: {}: {}", n, message);
                     }
                     Err(_) => {
-                        // send() 已清理残留 socket
                         eprintln!("Error: {} unreachable (cleaned)", n);
                     }
                     _ => {}
@@ -176,7 +183,7 @@ async fn run_async(cli: Cli) -> Result<()> {
         }
 
         Command::Log { name, last, agent_only } => {
-            let resp = send(
+            let resp = client::send(
                 &config,
                 &name,
                 SessionRequest::GetOutput { last, agent_only },
@@ -187,18 +194,18 @@ async fn run_async(cli: Cli) -> Result<()> {
 
         Command::Cancel { name } => {
             let resp =
-                send(&config, &name, SessionRequest::Cancel).await?;
+                client::send(&config, &name, SessionRequest::Cancel).await?;
             display::print_session_response(&resp);
         }
 
         Command::Allow { name } => {
             let resp =
-                send(&config, &name, SessionRequest::ApprovePermission).await?;
+                client::send(&config, &name, SessionRequest::ApprovePermission).await?;
             display::print_session_response(&resp);
         }
 
         Command::Deny { name } => {
-            let resp = send(
+            let resp = client::send(
                 &config,
                 &name,
                 SessionRequest::DenyPermission,
@@ -209,24 +216,24 @@ async fn run_async(cli: Cli) -> Result<()> {
 
         Command::Info { name } => {
             let resp =
-                send(&config, &name, SessionRequest::GetStatus).await?;
+                client::send(&config, &name, SessionRequest::GetStatus).await?;
             display::print_session_response(&resp);
         }
 
         Command::Restart { name } => {
             let resp =
-                send(&config, &name, SessionRequest::Restart).await?;
+                client::send(&config, &name, SessionRequest::Restart).await?;
             display::print_session_response(&resp);
         }
 
         Command::Mode { name, mode } => {
             let resp =
-                send(&config, &name, SessionRequest::SetMode { mode }).await?;
+                client::send(&config, &name, SessionRequest::SetMode { mode }).await?;
             display::print_session_response(&resp);
         }
 
         Command::Set { name, key, value } => {
-            let resp = send(
+            let resp = client::send(
                 &config,
                 &name,
                 SessionRequest::SetConfig { key, value },
@@ -248,12 +255,9 @@ async fn prompt_and_wait(
     text: String,
     files: Vec<crate::protocol::messages::FileAttachment>,
 ) -> Result<()> {
-    let resp = send(
-        config,
-        name,
-        SessionRequest::Prompt { text, files },
-    )
-    .await?;
+    let mut conn = client::SessionClient::connect(config, name).await?;
+
+    let resp = conn.send(SessionRequest::Prompt { text, files }).await?;
     if !matches!(resp, SessionResponse::Ok { .. }) {
         display::print_session_response(&resp);
         return Ok(());
@@ -263,7 +267,14 @@ async fn prompt_and_wait(
     // 无超时限制 — AI 输出可能很长，由用户 Ctrl+C 中止
     loop {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let resp = send(config, name, SessionRequest::GetStatus).await?;
+        let resp = match conn.send(SessionRequest::GetStatus).await {
+            Ok(r) => r,
+            Err(_) => {
+                // 连接断开，重连
+                conn = client::SessionClient::connect(config, name).await?;
+                conn.send(SessionRequest::GetStatus).await?
+            }
+        };
         if let SessionResponse::Status { ref summary } = resp {
             match summary.status.as_str() {
                 "idle" | "error" | "waiting_permission" => break,
@@ -273,59 +284,16 @@ async fn prompt_and_wait(
     }
 
     // 取最后一条消息（agent 回复 / 权限请求）
-    let resp = send(config, name, SessionRequest::GetOutput { last: 1, agent_only: false }).await?;
+    let req = SessionRequest::GetOutput { last: 1, agent_only: false };
+    let resp = match conn.send(req).await {
+        Ok(r) => r,
+        Err(_) => {
+            conn = client::SessionClient::connect(config, name).await?;
+            conn.send(SessionRequest::GetOutput { last: 1, agent_only: false }).await?
+        }
+    };
     display::print_session_response(&resp);
     Ok(())
-}
-
-// ==================== session 通信 ====================
-
-async fn send(
-    config: &TeamConfig,
-    name: &str,
-    req: SessionRequest,
-) -> Result<SessionResponse> {
-    let sock_path = config.session_socket(name);
-
-    #[cfg(unix)]
-    let stream = match UnixStream::connect(&sock_path).await {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = std::fs::remove_file(&sock_path);
-            return Err(e).with_context(|| {
-                format!("Cannot connect to agent '{}'. Is it running?", name)
-            });
-        }
-    };
-
-    #[cfg(not(unix))]
-    let stream = {
-        let port_str = std::fs::read_to_string(&sock_path)
-            .with_context(|| format!("Cannot read port file for '{}'", name))?;
-        let port: u16 = port_str.trim().parse()
-            .with_context(|| format!("Invalid port in {}", sock_path.display()))?;
-        match TcpStream::connect(("127.0.0.1", port)).await {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = std::fs::remove_file(&sock_path);
-                return Err(e).with_context(|| {
-                    format!("Cannot connect to agent '{}'. Is it running?", name)
-                });
-            }
-        }
-    };
-
-    let (read, write) = stream.into_split();
-    let mut writer = JsonLineWriter::new(write);
-    let mut reader = JsonLineReader::new(read);
-
-    writer.write(&req).await?;
-    let resp: SessionResponse = reader
-        .read()
-        .await?
-        .context("Session closed connection unexpectedly")?;
-
-    Ok(resp)
 }
 
 // ==================== 后台启动 ====================
