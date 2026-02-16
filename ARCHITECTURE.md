@@ -19,7 +19,7 @@ agent-team/
 ├── CLAUDE.md                    # 编码规范
 ├── src/
 │   ├── main.rs                  # 入口：tracing + clap → 分发
-│   ├── lib.rs                   # pub mod 导出（供集成测试 import）
+│   ├── lib.rs                   # pub mod 导出 5 个顶层模块（acp_client, cli, config, protocol, session）
 │   ├── bin/
 │   │   └── mock_agent.rs        # 测试用 ACP echo agent（Agent trait 实现）
 │   ├── cli/
@@ -30,7 +30,7 @@ agent-team/
 │   ├── session/
 │   │   ├── mod.rs               # pub mod
 │   │   ├── server.rs            # session 主循环：UDS listener + 请求分发 + stdout 输出
-│   │   ├── server_tests.rs      # server 单元测试（handle_request 分发 + 辅助函数）
+│   │   ├── server_tests.rs      # server 单元测试（14 个异步测试，覆盖请求分发全路径 + 边界情况）
 │   │   └── agent.rs             # AgentHandle + AgentStatus + OutputRingBuffer + spawn_agent
 │   ├── acp_client/
 │   │   ├── mod.rs               # pub mod
@@ -41,7 +41,7 @@ agent-team/
 │   │   └── transport.rs         # JsonLineReader / JsonLineWriter
 │   └── config/
 │       ├── mod.rs               # pub use 重导出
-│       └── defaults.rs          # TeamConfig + session socket 辅助
+│       └── defaults.rs          # TeamConfig + 20 种 Agent 类型注册 + 适配器提示 + session socket 辅助
 ├── npm/                         # npm 分发（Node.js wrapper + 平台二进制）
 │   ├── agent-team/              # 主包：平台检测 + 二进制执行器
 │   │   ├── package.json         # bin: agent-team → bin/agent-team.js
@@ -305,6 +305,5 @@ main.rs ──► cli ──► protocol, config, session::server
 
 ## 测试
 
-- **78 单元测试**：messages 序列化 + label、transport 收发、ring buffer、agent handle + status + summary、server 请求分发（10+ 路径）+ 辅助函数、display 格式化、team_client helpers（permission_response + fmt_tool_info + extract_text + write_output）、config socket 辅助 + agent 类型注册 + adapter hint、update 版本比较
+- **59 单元测试**：messages 6、transport 3、config 11、agent 11、server_tests 14、display 15、team_client 8、acp_client 1、update 4
 - **6 集成测试**：独立 session + mock agent，覆盖 status、prompt/output（含 last + agent_only）、cancel、restart、graceful shutdown、output last round
-- **覆盖率**：64.74%（617/953 行）
