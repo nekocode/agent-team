@@ -1,6 +1,6 @@
 {
   "name": "@nekocode/agent-team-linux-x64",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "agent-team binary for Linux x64",
   "license": "MIT",
   "repository": {
