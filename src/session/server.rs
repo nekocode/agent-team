@@ -260,78 +260,21 @@ pub(crate) async fn handle_request(
         }
 
         SessionRequest::Prompt { text, files } => {
-            // agent 忙碌时收到新 prompt → 自动取消当前任务
-            let cur_status = handle.borrow().get_status();
-            if matches!(cur_status, AgentStatus::Running | AgentStatus::WaitingPermission) {
-                // 1. 发 ACP cancel 通知（Rc 共享连接，do_prompt 运行中也能发）
-                let (conn, sid) = clone_conn(handle);
-                if let (Some(conn), Some(sid)) = (conn, sid) {
-                    let _ = conn.cancel(acp::CancelNotification::new(sid)).await;
-                }
-
-                // 2. deny 所有 pending 权限（解除 request_permission 阻塞）
-                let queue = handle.borrow().pending_permissions.clone();
-                {
-                    let mut q = queue.lock().await;
-                    while let Some(perm) = q.pop_front() {
-                        let _ = perm.response_tx.send(PermissionDecision::Deny);
-                    }
-                }
-
-                event_tx.send(Event::Info {
-                    tag: "cancelled",
-                    message: "Auto-cancelled for new prompt".into(),
-                }).ok();
-
-                // 3. 等 do_prompt 完成（5s 超时）
-                let mut settled = false;
-                for _ in 0..50 {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    // 持续 drain 新出现的权限请求
-                    {
-                        let mut q = queue.lock().await;
-                        while let Some(perm) = q.pop_front() {
-                            let _ = perm.response_tx.send(PermissionDecision::Deny);
-                        }
-                    }
-                    let s = handle.borrow().get_status();
-                    if matches!(s, AgentStatus::Idle | AgentStatus::Error(_)) {
-                        settled = true;
-                        break;
-                    }
-                }
-                if !settled {
-                    return SessionResponse::Error {
-                        message: "Agent still busy after cancel".into(),
-                    };
-                }
+            // 忙碌时自动取消当前任务
+            if let Err(resp) = cancel_if_busy(handle, event_tx).await {
+                return resp;
             }
-
+            // 前置校验
             let h = handle.borrow();
             if h.get_status() == AgentStatus::Running {
                 return SessionResponse::Error { message: "Agent is already running".into() };
             }
             if h.acp_conn.is_none() || h.session_id.is_none() {
-                return SessionResponse::Error { message: "No ACP connection".into() };
+                return no_session();
             }
             drop(h);
-            // 用户 prompt 记入输出缓冲区
-            let user_entry = OutputEntry {
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                update_type: OutputType::UserPrompt,
-                content: text.clone(),
-            };
-            let buf = handle.borrow().output_buffer.clone();
-            buf.lock().await.push(user_entry.clone());
-            event_tx.send(Event::Output(user_entry)).ok();
-            let mut blocks: Vec<acp::ContentBlock> = vec![text.into()];
-            for f in &files {
-                blocks.push(format!("--- {} ---\n{}", f.path.display(), f.content).into());
-            }
-            let h = Rc::clone(handle);
-            let etx = event_tx.clone();
-            tokio::task::spawn_local(async move { do_prompt(&h, blocks, &etx).await; });
-            SessionResponse::Ok { message: "Prompt submitted".into() }
+            // 提交 prompt
+            submit_prompt(handle, event_tx, text, files).await
         }
 
         SessionRequest::GetOutput { last, agent_only } => {
@@ -395,9 +338,12 @@ pub(crate) async fn handle_request(
             let tc = match config.agent_types.get(&agent_type) {
                 Some(tc) => tc.clone(),
                 None => {
+                    handle.borrow().set_status(AgentStatus::Error(
+                        format!("Unknown agent type: {}", agent_type),
+                    ));
                     return SessionResponse::Error {
                         message: format!("Unknown agent type: {}", agent_type),
-                    }
+                    };
                 }
             };
 
@@ -425,9 +371,13 @@ pub(crate) async fn handle_request(
                         message: "Agent restarted".into(),
                     }
                 }
-                Err(e) => SessionResponse::Error {
-                    message: format!("Restart failed: {:#}", e),
-                },
+                Err(e) => {
+                    // S2: Restart 失败 → 状态标记为 Error，而非停留在 Stopping
+                    handle.borrow().set_status(AgentStatus::Error(format!("{:#}", e)));
+                    SessionResponse::Error {
+                        message: format!("Restart failed: {:#}", e),
+                    }
+                }
             }
         }
 
@@ -436,36 +386,115 @@ pub(crate) async fn handle_request(
         },
 
         SessionRequest::SetMode { mode } => {
-            let (conn, sid) = clone_conn(handle);
-            let Some((conn, sid)) = conn.zip(sid) else {
-                return no_session();
-            };
-            let req = acp::SetSessionModeRequest::new(sid, mode.clone());
-            let result = conn.set_session_mode(req).await;
-            match result {
-                Ok(_) => {
-                    event_tx.send(Event::Info { tag: "mode", message: mode.clone() }).ok();
-                    SessionResponse::Ok { message: format!("Mode: {}", mode) }
-                }
-                Err(e) => SessionResponse::Error { message: format!("{}", e) },
-            }
+            let msg = format!("Mode: {}", mode);
+            acp_call(handle, event_tx, "mode", &msg, |conn, sid| {
+                Box::pin(async move {
+                    conn.set_session_mode(acp::SetSessionModeRequest::new(sid, mode)).await
+                })
+            }).await
         }
 
         SessionRequest::SetConfig { key, value } => {
-            let (conn, sid) = clone_conn(handle);
-            let Some((conn, sid)) = conn.zip(sid) else {
-                return no_session();
-            };
-            let req = acp::SetSessionConfigOptionRequest::new(sid, key.clone(), value.clone());
-            let result = conn.set_session_config_option(req).await;
-            match result {
-                Ok(_) => {
-                    event_tx.send(Event::Info { tag: "config", message: format!("{} = {}", key, value) }).ok();
-                    SessionResponse::Ok { message: format!("Config: {} = {}", key, value) }
-                }
-                Err(e) => SessionResponse::Error { message: format!("{}", e) },
-            }
+            let msg = format!("Config: {} = {}", key, value);
+            acp_call(handle, event_tx, "config", &msg, |conn, sid| {
+                Box::pin(async move {
+                    conn.set_session_config_option(
+                        acp::SetSessionConfigOptionRequest::new(sid, key, value),
+                    ).await
+                })
+            }).await
         }
+    }
+}
+
+// ==================== prompt 辅助 ====================
+
+/// 忙碌时取消当前任务，等待 settle（5s 超时）
+async fn cancel_if_busy(
+    handle: &Rc<RefCell<AgentHandle>>,
+    event_tx: &mpsc::UnboundedSender<Event>,
+) -> Result<(), SessionResponse> {
+    let cur_status = handle.borrow().get_status();
+    if !matches!(cur_status, AgentStatus::Running | AgentStatus::WaitingPermission) {
+        return Ok(());
+    }
+
+    let (conn, sid) = clone_conn(handle);
+    if let (Some(conn), Some(sid)) = (conn, sid) {
+        let _ = conn.cancel(acp::CancelNotification::new(sid)).await;
+    }
+
+    let queue = handle.borrow().pending_permissions.clone();
+    drain_permissions(&queue).await;
+    event_tx.send(Event::Info { tag: "cancelled", message: "Auto-cancelled for new prompt".into() }).ok();
+
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        drain_permissions(&queue).await;
+        let s = handle.borrow().get_status();
+        if matches!(s, AgentStatus::Idle | AgentStatus::Error(_)) {
+            return Ok(());
+        }
+    }
+    Err(SessionResponse::Error { message: "Agent still busy after cancel".into() })
+}
+
+async fn drain_permissions(
+    queue: &Arc<tokio::sync::Mutex<std::collections::VecDeque<crate::acp_client::team_client::PendingPermission>>>,
+) {
+    let mut q: tokio::sync::MutexGuard<'_, _> = queue.lock().await;
+    while let Some(perm) = q.pop_front() {
+        let _ = perm.response_tx.send(PermissionDecision::Deny);
+    }
+}
+
+/// 记录 prompt + spawn 后台 do_prompt
+async fn submit_prompt(
+    handle: &Rc<RefCell<AgentHandle>>,
+    event_tx: &mpsc::UnboundedSender<Event>,
+    text: String,
+    files: Vec<crate::protocol::messages::FileAttachment>,
+) -> SessionResponse {
+    let user_entry = OutputEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        update_type: OutputType::UserPrompt,
+        content: text.clone(),
+    };
+    let buf = handle.borrow().output_buffer.clone();
+    buf.lock().await.push(user_entry.clone());
+    event_tx.send(Event::Output(user_entry)).ok();
+
+    let mut blocks: Vec<acp::ContentBlock> = vec![text.into()];
+    for f in &files {
+        blocks.push(format!("--- {} ---\n{}", f.path.display(), f.content).into());
+    }
+    let h = Rc::clone(handle);
+    let etx = event_tx.clone();
+    tokio::task::spawn_local(async move { do_prompt(&h, blocks, &etx).await; });
+    SessionResponse::Ok { message: "Prompt submitted".into() }
+}
+
+/// S6: 通用 ACP 调用（SetMode / SetConfig 共享骨架）
+async fn acp_call<F, T>(
+    handle: &Rc<RefCell<AgentHandle>>,
+    event_tx: &mpsc::UnboundedSender<Event>,
+    tag: &'static str,
+    success_msg: &str,
+    call: F,
+) -> SessionResponse
+where
+    F: FnOnce(Rc<acp::ClientSideConnection>, acp::SessionId) -> std::pin::Pin<Box<dyn std::future::Future<Output = acp::Result<T>>>>,
+{
+    let (conn, sid) = clone_conn(handle);
+    let Some((conn, sid)) = conn.zip(sid) else {
+        return no_session();
+    };
+    match call(conn, sid).await {
+        Ok(_) => {
+            event_tx.send(Event::Info { tag, message: success_msg.to_string() }).ok();
+            SessionResponse::Ok { message: success_msg.to_string() }
+        }
+        Err(e) => SessionResponse::Error { message: format!("{}", e) },
     }
 }
 
@@ -478,11 +507,20 @@ async fn do_prompt(
 ) {
     let (conn, sid, buf) = {
         let mut h = handle.borrow_mut();
+        // S3: 优雅检查，避免与 Restart 交错时 panic
+        let Some(conn) = h.acp_conn.as_ref().map(Rc::clone) else {
+            h.set_status(AgentStatus::Error("No ACP connection".into()));
+            event_tx.send(Event::Info { tag: "error", message: "No ACP connection in do_prompt".into() }).ok();
+            return;
+        };
+        let Some(sid) = h.session_id.clone() else {
+            h.set_status(AgentStatus::Error("No session ID".into()));
+            event_tx.send(Event::Info { tag: "error", message: "No session ID in do_prompt".into() }).ok();
+            return;
+        };
         h.set_status(AgentStatus::Running);
         h.prompt_count += 1;
-        (h.acp_conn.as_ref().expect("pre-checked").clone(),
-         h.session_id.clone().expect("pre-checked"),
-         Arc::clone(&h.output_buffer))
+        (conn, sid, Arc::clone(&h.output_buffer))
     };
     event_tx.send(Event::Info { tag: "running", message: "Processing".into() }).ok();
 

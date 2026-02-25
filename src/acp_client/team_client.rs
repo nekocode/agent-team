@@ -5,8 +5,8 @@ use agent_client_protocol as acp;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::AutoApprovePolicy;
-use crate::session::agent::{AgentStatus, OutputRingBuffer};
 use crate::protocol::messages::{OutputEntry, OutputType};
+use crate::session::agent::{AgentStatus, OutputRingBuffer};
 
 // ==================== 权限请求队列 ====================
 
@@ -24,7 +24,7 @@ pub enum PermissionDecision {
 // 每个 Agent 一个 TeamClient，处理回调（通知、权限等）
 
 pub struct TeamClient {
-    pub status: Arc<Mutex<AgentStatus>>,
+    pub status: Arc<std::sync::Mutex<AgentStatus>>,
     pub output_buffer: Arc<Mutex<OutputRingBuffer>>,
     pub pending_permissions: Arc<Mutex<VecDeque<PendingPermission>>>,
     pub auto_approve: AutoApprovePolicy,
@@ -33,7 +33,7 @@ pub struct TeamClient {
 
 impl TeamClient {
     pub fn new(
-        status: Arc<Mutex<AgentStatus>>,
+        status: Arc<std::sync::Mutex<AgentStatus>>,
         buffer: Arc<Mutex<OutputRingBuffer>>,
         pending: Arc<Mutex<VecDeque<PendingPermission>>>,
         auto_approve: AutoApprovePolicy,
@@ -98,11 +98,11 @@ impl acp::Client for TeamClient {
         }
 
         // 状态 → WaitingPermission
-        *self.status.lock().await = AgentStatus::WaitingPermission;
+        *self.status.lock().unwrap() = AgentStatus::WaitingPermission;
 
         // 等待用户回复
         let approved = matches!(rx.await, Ok(PermissionDecision::Approve));
-        *self.status.lock().await = AgentStatus::Running;
+        *self.status.lock().unwrap() = AgentStatus::Running;
         Ok(permission_response(&args.options, approved))
     }
 
@@ -110,88 +110,43 @@ impl acp::Client for TeamClient {
         &self,
         args: acp::SessionNotification,
     ) -> acp::Result<()> {
-        match &args.update {
-            acp::SessionUpdate::AgentMessageChunk(chunk) => {
-                let text = extract_text(&chunk.content);
-                if !text.is_empty() {
-                    self.write_output(OutputType::AgentMessage, text).await;
-                }
+        let (output_type, text) = match &args.update {
+            // A3: 合并 chunk 处理
+            acp::SessionUpdate::AgentMessageChunk(c) => {
+                (OutputType::AgentMessage, extract_text(&c.content))
             }
-
-            acp::SessionUpdate::AgentThoughtChunk(chunk) => {
-                let text = extract_text(&chunk.content);
-                if !text.is_empty() {
-                    self.write_output(OutputType::AgentThought, text).await;
-                }
+            acp::SessionUpdate::AgentThoughtChunk(c) => {
+                (OutputType::AgentThought, extract_text(&c.content))
             }
-
             acp::SessionUpdate::ToolCall(tc) => {
-                self.write_output(
-                    OutputType::ToolCallStart,
-                    tc.title.clone(),
-                )
-                .await;
+                (OutputType::ToolCallStart, tc.title.clone())
             }
-
             acp::SessionUpdate::ToolCallUpdate(tcu) => {
-                let mut parts = Vec::new();
-                if let Some(title) = &tcu.fields.title {
-                    parts.push(title.clone());
-                }
-                if let Some(status) = &tcu.fields.status {
-                    parts.push(format!("{:?}", status));
-                }
-                let text = if parts.is_empty() {
-                    "(No details)".to_string()
-                } else {
-                    parts.join(" ")
-                };
-                self.write_output(OutputType::ToolCallUpdate, text).await;
+                (OutputType::ToolCallUpdate, fmt_tool_call_update(&tcu.fields))
             }
-
             acp::SessionUpdate::Plan(plan) => {
-                let entries_text: Vec<String> = plan
-                    .entries
-                    .iter()
-                    .map(|e| {
-                        format!("  [{:?}] {}", e.status, e.content)
-                    })
-                    .collect();
-                self.write_output(
-                    OutputType::PlanUpdate,
-                    format!("Plan:\n{}", entries_text.join("\n")),
-                )
-                .await;
+                (OutputType::PlanUpdate, fmt_plan(plan))
             }
-
             acp::SessionUpdate::CurrentModeUpdate(m) => {
-                self.write_output(
-                    OutputType::ModeUpdate,
-                    format!("{}", m.current_mode_id.0),
-                )
-                .await;
+                (OutputType::ModeUpdate, m.current_mode_id.0.to_string())
             }
-
             acp::SessionUpdate::ConfigOptionUpdate(c) => {
                 let items: Vec<String> = c
                     .config_options
                     .iter()
                     .map(|o| format!("{} ({})", o.name, o.id.0))
                     .collect();
-                self.write_output(
-                    OutputType::ConfigUpdate,
-                    items.join(", "),
-                )
-                .await;
+                (OutputType::ConfigUpdate, items.join(", "))
             }
-
             // AvailableCommandsUpdate 等信息性通知，静默忽略
-            _ => {}
-        }
+            _ => return Ok(()),
+        };
 
+        if !text.is_empty() {
+            self.write_output(output_type, text).await;
+        }
         Ok(())
     }
-
 }
 
 // ==================== 辅助函数 ====================
@@ -208,6 +163,8 @@ fn permission_response(
                 ),
             );
         }
+        // A4: approved 但无可选项，降级为 Cancelled
+        eprintln!("Warning: permission approved but no options available, falling back to Cancelled");
     }
     acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled)
 }
@@ -221,6 +178,26 @@ fn fmt_tool_info(fields: &acp::ToolCallUpdateFields) -> String {
         return format!("{:?}", kind);
     }
     "Unknown tool".to_string()
+}
+
+fn fmt_tool_call_update(fields: &acp::ToolCallUpdateFields) -> String {
+    let mut parts = Vec::new();
+    if let Some(title) = &fields.title {
+        parts.push(title.clone());
+    }
+    if let Some(status) = &fields.status {
+        parts.push(format!("{:?}", status));
+    }
+    if parts.is_empty() { "(No details)".to_string() } else { parts.join(" ") }
+}
+
+fn fmt_plan(plan: &acp::Plan) -> String {
+    let lines: Vec<String> = plan
+        .entries
+        .iter()
+        .map(|e| format!("  [{:?}] {}", e.status, e.content))
+        .collect();
+    format!("Plan:\n{}", lines.join("\n"))
 }
 
 fn extract_text(content: &acp::ContentBlock) -> String {
@@ -314,7 +291,7 @@ mod tests {
         let buf = Arc::new(Mutex::new(OutputRingBuffer::new(10)));
         let (tx, mut rx) = mpsc::unbounded_channel();
         let client = TeamClient::new(
-            Arc::new(Mutex::new(AgentStatus::Idle)),
+            Arc::new(std::sync::Mutex::new(AgentStatus::Idle)),
             Arc::clone(&buf),
             Arc::new(Mutex::new(std::collections::VecDeque::new())),
             AutoApprovePolicy::Never,
@@ -333,7 +310,7 @@ mod tests {
     async fn write_output_no_sender() {
         let buf = Arc::new(Mutex::new(OutputRingBuffer::new(10)));
         let client = TeamClient::new(
-            Arc::new(Mutex::new(AgentStatus::Idle)),
+            Arc::new(std::sync::Mutex::new(AgentStatus::Idle)),
             Arc::clone(&buf),
             Arc::new(Mutex::new(std::collections::VecDeque::new())),
             AutoApprovePolicy::Never,

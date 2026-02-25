@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::acp_client::team_client::{PendingPermission, PermissionDecision};
 use crate::config::TeamConfig;
@@ -19,10 +19,10 @@ fn stub_handle(name: &str) -> Rc<RefCell<AgentHandle>> {
         agent_type: "mock".into(),
         cwd: PathBuf::from("/tmp"),
         extra_args: vec![],
-        status: Arc::new(Mutex::new(AgentStatus::Idle)),
+        status: Arc::new(std::sync::Mutex::new(AgentStatus::Idle)),
         started_at: Instant::now(),
-        output_buffer: Arc::new(Mutex::new(OutputRingBuffer::new(100))),
-        pending_permissions: Arc::new(Mutex::new(VecDeque::new())),
+        output_buffer: Arc::new(tokio::sync::Mutex::new(OutputRingBuffer::new(100))),
+        pending_permissions: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
         prompt_count: 0,
         session_id: None,
         acp_conn: None,
@@ -312,6 +312,7 @@ async fn restart_unknown_agent_type() {
             }
             _ => panic!("expected Error"),
         }
-        assert_eq!(h.borrow().get_status(), AgentStatus::Stopping);
+        // S2: Restart 失败后状态应为 Error，不再停留在 Stopping
+        assert!(matches!(h.borrow().get_status(), AgentStatus::Error(_)));
     }).await;
 }

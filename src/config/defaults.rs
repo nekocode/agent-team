@@ -38,128 +38,78 @@ fn platform_id() -> u32 {
     { std::process::id() }
 }
 
+// ==================== Agent 注册表（声明式） ====================
+
+struct AgentDef {
+    name: &'static str,
+    command: &'static str,
+    args: &'static [&'static str],
+    /// 需要适配器时的安装命令
+    install_hint: Option<&'static str>,
+}
+
+const AGENT_REGISTRY: &[AgentDef] = &[
+    // -- 原生 ACP：--acp flag --
+    AgentDef { name: "copilot",    command: "copilot",    args: &["--acp"], install_hint: None },
+    AgentDef { name: "auggie",     command: "auggie",     args: &["--acp"], install_hint: None },
+    AgentDef { name: "cline",      command: "cline",      args: &["--acp"], install_hint: None },
+    AgentDef { name: "qoder",      command: "qodercli",   args: &["--acp"], install_hint: None },
+    AgentDef { name: "qwen",       command: "qwen",       args: &["--acp"], install_hint: None },
+    // -- 原生 ACP：--experimental-acp flag --
+    AgentDef { name: "gemini",     command: "gemini",     args: &["--experimental-acp"], install_hint: None },
+    AgentDef { name: "blackbox",   command: "blackbox",   args: &["--experimental-acp"], install_hint: None },
+    // -- 原生 ACP：acp 子命令 --
+    AgentDef { name: "goose",      command: "goose",      args: &["acp"], install_hint: None },
+    AgentDef { name: "kiro",       command: "kiro-cli",   args: &["acp"], install_hint: None },
+    AgentDef { name: "openhands",  command: "openhands",  args: &["acp"], install_hint: None },
+    AgentDef { name: "opencode",   command: "opencode",   args: &["acp"], install_hint: None },
+    AgentDef { name: "kimi",       command: "kimi",       args: &["acp"], install_hint: None },
+    AgentDef { name: "cagent",     command: "cagent",     args: &["acp"], install_hint: None },
+    AgentDef { name: "stakpak",    command: "stakpak",    args: &["acp"], install_hint: None },
+    AgentDef { name: "vtcode",     command: "vtcode",     args: &["acp"], install_hint: None },
+    // -- 独立 ACP 二进制 --
+    AgentDef { name: "vibe",       command: "vibe-acp",       args: &[], install_hint: None },
+    AgentDef { name: "fast-agent", command: "fast-agent-acp", args: &[], install_hint: None },
+    // -- 需要适配器 --
+    AgentDef { name: "claude", command: "claude-code-acp", args: &[], install_hint: Some("npm install -g @zed-industries/claude-code-acp") },
+    AgentDef { name: "codex",  command: "codex-acp",       args: &[], install_hint: Some("npm install -g @zed-industries/codex-acp") },
+    AgentDef { name: "pi",     command: "pi-acp",          args: &[], install_hint: Some("npm install -g pi-acp") },
+];
+
 impl Default for TeamConfig {
     fn default() -> Self {
-        let mut agent_types = HashMap::new();
-
-        // -- 原生 ACP：--acp flag --
-        for (name, cmd, flag) in [
-            ("copilot", "copilot", "--acp"),
-            ("auggie", "auggie", "--acp"),
-            ("cline", "cline", "--acp"),
-            ("qoder", "qodercli", "--acp"),
-            ("qwen", "qwen", "--acp"),
-        ] {
-            agent_types.insert(
-                name.to_string(),
-                AgentTypeConfig {
-                    command: cmd.to_string(),
-                    default_args: vec![flag.to_string()],
-                },
-            );
-        }
-
-        // -- 原生 ACP：--experimental-acp flag --
-        for (name, cmd) in [
-            ("gemini", "gemini"),
-            ("blackbox", "blackbox"),
-        ] {
-            agent_types.insert(
-                name.to_string(),
-                AgentTypeConfig {
-                    command: cmd.to_string(),
-                    default_args: vec!["--experimental-acp".to_string()],
-                },
-            );
-        }
-
-        // -- 原生 ACP：acp 子命令 --
-        for (name, cmd) in [
-            ("goose", "goose"),
-            ("kiro", "kiro-cli"),
-            ("openhands", "openhands"),
-            ("opencode", "opencode"),
-            ("kimi", "kimi"),
-            ("cagent", "cagent"),
-            ("stakpak", "stakpak"),
-            ("vtcode", "vtcode"),
-        ] {
-            agent_types.insert(
-                name.to_string(),
-                AgentTypeConfig {
-                    command: cmd.to_string(),
-                    default_args: vec!["acp".to_string()],
-                },
-            );
-        }
-
-        // -- 独立 ACP 二进制 --
-        for (name, cmd) in [
-            ("vibe", "vibe-acp"),
-            ("fast-agent", "fast-agent-acp"),
-        ] {
-            agent_types.insert(
-                name.to_string(),
-                AgentTypeConfig {
-                    command: cmd.to_string(),
-                    default_args: vec![],
-                },
-            );
-        }
-
-        // -- 需要适配器 --
-        for (name, cmd) in [
-            ("claude", "claude-code-acp"),
-            ("codex", "codex-acp"),
-            ("pi", "pi-acp"),
-        ] {
-            agent_types.insert(
-                name.to_string(),
-                AgentTypeConfig {
-                    command: cmd.to_string(),
-                    default_args: vec![],
-                },
-            );
-        }
+        let agent_types = AGENT_REGISTRY
+            .iter()
+            .map(|def| {
+                (
+                    def.name.to_string(),
+                    AgentTypeConfig {
+                        command: def.command.to_string(),
+                        default_args: def.args.iter().map(|s| s.to_string()).collect(),
+                    },
+                )
+            })
+            .collect();
 
         let id = platform_id();
-        let socket_dir =
-            std::env::temp_dir().join(format!("agent-team-{}", id));
-
         Self {
             auto_approve: AutoApprovePolicy::Never,
             output_buffer_size: 10000,
             agent_types,
             default_cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            socket_dir,
+            socket_dir: std::env::temp_dir().join(format!("agent-team-{}", id)),
         }
     }
 }
 
 // ==================== 适配器提示 ====================
 
-pub struct AdapterHint {
-    pub adapter: &'static str,
-    pub install: &'static str,
-}
-
 /// 需要额外适配器的 agent，返回安装提示
-pub fn adapter_hint(agent_type: &str) -> Option<AdapterHint> {
-    match agent_type {
-        "claude" => Some(AdapterHint {
-            adapter: "claude-code-acp",
-            install: "npm install -g @zed-industries/claude-code-acp",
-        }),
-        "codex" => Some(AdapterHint {
-            adapter: "codex-acp",
-            install: "npm install -g @zed-industries/codex-acp",
-        }),
-        "pi" => Some(AdapterHint {
-            adapter: "pi-acp",
-            install: "npm install -g pi-acp",
-        }),
-        _ => None,
-    }
+pub fn adapter_hint(agent_type: &str) -> Option<(&'static str, &'static str)> {
+    AGENT_REGISTRY
+        .iter()
+        .find(|d| d.name == agent_type)
+        .and_then(|d| d.install_hint.map(|hint| (d.command, hint)))
 }
 
 // ==================== Session socket 辅助 ====================
@@ -318,8 +268,8 @@ mod tests {
 
     #[test]
     fn adapter_hint_install_cmd() {
-        let hint = adapter_hint("claude").unwrap();
-        assert_eq!(hint.adapter, "claude-code-acp");
-        assert!(hint.install.contains("@zed-industries/claude-code-acp"));
+        let (cmd, install) = adapter_hint("claude").unwrap();
+        assert_eq!(cmd, "claude-code-acp");
+        assert!(install.contains("@zed-industries/claude-code-acp"));
     }
 }

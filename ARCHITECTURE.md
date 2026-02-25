@@ -18,31 +18,31 @@ agent-team/
 ├── ARCHITECTURE.md              # 本文档
 ├── CLAUDE.md                    # 编码规范
 ├── src/
-│   ├── main.rs                  # 入口：tracing + clap → 分发
-│   ├── lib.rs                   # pub mod 导出 5 个顶层模块（acp_client, cli, config, protocol, session）
+│   ├── main.rs                  # 入口：tracing + use agent_team::cli → 分发
+│   ├── lib.rs                   # pub mod 导出 5 个顶层模块，binary 通过 lib crate 引用
 │   ├── bin/
-│   │   └── mock_agent.rs        # 测试用 ACP echo agent（Agent trait 实现）
+│   │   └── mock_agent.rs        # 测试用 ACP agent（Agent trait 实现，返回 EndTurn）
 │   ├── cli/
-│   │   ├── mod.rs               # parse() + run()，命令分发 + prompt 轮询
+│   │   ├── mod.rs               # parse() + run()，命令分发 + prompt 轮询 + 辅助函数
 │   │   ├── client.rs            # SessionClient：复用连接的 session 通信层
 │   │   ├── commands.rs          # clap derive 命令定义
-│   │   ├── display.rs           # 终端输出格式化（纯文本对齐）
+│   │   ├── display.rs           # 终端输出格式化（MsgState 状态机 + 纯文本对齐）
 │   │   └── update.rs            # 自更新：npm view 查版本 + npm install -g
 │   ├── session/
 │   │   ├── mod.rs               # pub mod
 │   │   ├── server.rs            # session 主循环：UDS listener + 请求分发 + stdout 输出
 │   │   ├── server_tests.rs      # server 单元测试（14 个异步测试，覆盖请求分发全路径 + 边界情况）
-│   │   └── agent.rs             # AgentHandle + AgentStatus + OutputRingBuffer + spawn_agent
+│   │   └── agent.rs             # AgentHandle + AgentStatus(impl Display) + OutputRingBuffer + spawn_agent
 │   ├── acp_client/
-│   │   ├── mod.rs               # pub mod
-│   │   └── team_client.rs       # ACP Client trait 实现（回调处理 + output 桥接）
+│   │   ├── mod.rs               # pub mod + 编译期 Send 断言
+│   │   └── team_client.rs       # ACP Client trait 实现（回调处理 + output 桥接 + 格式化辅助）
 │   ├── protocol/
 │   │   ├── mod.rs               # pub mod
-│   │   ├── messages.rs          # SessionRequest / SessionResponse + OutputType
+│   │   ├── messages.rs          # SessionRequest / SessionResponse + OutputType(impl Display)
 │   │   └── transport.rs         # JsonLineReader / JsonLineWriter
 │   └── config/
 │       ├── mod.rs               # pub use 重导出
-│       └── defaults.rs          # TeamConfig + 20 种 Agent 类型注册 + 适配器提示 + session socket 辅助
+│       └── defaults.rs          # AGENT_REGISTRY 静态注册表 + TeamConfig + 适配器提示 + socket 辅助
 ├── npm/                         # npm 分发（Node.js wrapper + 平台二进制）
 │   ├── agent-team/              # 主包：平台检测 + 二进制执行器
 │   │   ├── package.json         # bin: agent-team → bin/agent-team.js
@@ -106,12 +106,12 @@ agent-team/
 
 ACP SDK 的 `Client` trait 是 `?Send`，`io_task` 的 Future 是 `!Send`。session 跑在 `tokio::task::LocalSet` 上，所有 ACP 任务用 `spawn_local`。因此 handle 用 `Rc<RefCell<>>` 而非 `Arc<Mutex<>>`。
 
-### 3. Arc<Mutex<>> 跨 callback 共享
+### 3. 混合 Mutex 跨 callback 共享
 
 `TeamClient`（ACP 回调）和 `AgentHandle` 需要共享三块状态：
-- `status: Arc<Mutex<AgentStatus>>`
-- `output_buffer: Arc<Mutex<OutputRingBuffer>>`
-- `pending_permissions: Arc<Mutex<VecDeque<PendingPermission>>>`
+- `status: Arc<std::sync::Mutex<AgentStatus>>` — 同步锁，短临界区，避免 async 下 try_lock 竞争
+- `output_buffer: Arc<tokio::sync::Mutex<OutputRingBuffer>>` — 异步锁，写入需跨 await
+- `pending_permissions: Arc<tokio::sync::Mutex<VecDeque<PendingPermission>>>` — 异步锁
 
 `TeamClient` 在 ACP callback 中异步写入，`AgentHandle` 在请求处理时读取。
 
@@ -202,7 +202,9 @@ Agent 请求权限 → TeamClient.request_permission()
 ## 模块依赖
 
 ```
-main.rs ──► cli ──► protocol, config, session::server
+main.rs ──► agent_team::cli (lib crate)
+             │
+             cli ──► protocol, config, session::server
              │
              └──► session::server ──► session::agent
                        │                    │
@@ -212,11 +214,12 @@ main.rs ──► cli ──► protocol, config, session::server
                               └──► config（AutoApprovePolicy）
 ```
 
+- **main.rs** 不再声明 mod，通过 `use agent_team::cli` 引用 lib crate（消除双重编译）
 - **cli** 是客户端层：`add` 直接调 session::server::run，其余命令通过 UDS 通信
 - **session** 持有所有业务逻辑（单 agent 生命周期管理）
 - **acp_client** 实现 ACP Client trait 核心回调（通知 + 权限）
 - **protocol** 定义双向消息格式 + 传输层
-- **config** 零依赖，纯数据 + socket 辅助
+- **config** 零依赖，AGENT_REGISTRY 静态注册表 + socket 辅助
 
 ---
 

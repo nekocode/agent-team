@@ -1,9 +1,3 @@
-mod acp_client;
-mod cli;
-mod config;
-mod protocol;
-mod session;
-
 use anyhow::Result;
 
 fn main() -> Result<()> {
@@ -14,6 +8,6 @@ fn main() -> Result<()> {
             .init();
     }
 
-    let cli = cli::parse();
-    cli::run(cli)
+    let cli = agent_team::cli::parse();
+    agent_team::cli::run(cli)
 }

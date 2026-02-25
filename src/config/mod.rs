@@ -1,3 +1,3 @@
 pub mod defaults;
 
-pub use defaults::{AgentTypeConfig, AutoApprovePolicy, TeamConfig, adapter_hint};
+pub use defaults::{adapter_hint, AgentTypeConfig, AutoApprovePolicy, TeamConfig};

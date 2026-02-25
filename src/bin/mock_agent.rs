@@ -34,17 +34,9 @@ impl acp::Agent for MockAgent {
 
     async fn prompt(
         &self,
-        args: acp::PromptRequest,
+        _args: acp::PromptRequest,
     ) -> acp::Result<acp::PromptResponse> {
-        let _text: String = args
-            .prompt
-            .iter()
-            .filter_map(|block| match block {
-                acp::ContentBlock::Text(t) => Some(t.text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
+        // Mock agent：直接返回 EndTurn（ACP 内容通过 notification 发送，非 response）
         Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
     }
 

@@ -104,91 +104,90 @@ pub fn print_agent_list(agents: &[AgentSummary]) {
 
 /// 对话流显示：<msg> 包裹每条消息，空行分隔段落
 fn print_entries(agent_name: &str, entries: &[OutputEntry]) {
-    // 当前角色：user / agent / ""
-    let mut role = "";
-    let mut has_content = false; // msg 内是否已有内容
-    let mut prev_was_text = false; // 上一条是正文（AgentMessage/Thought）
-    let mut after_interaction = false; // 上一条是交互点
+    let mut state = MsgState::default();
     let mut i = 0;
 
     while i < entries.len() {
         let entry = &entries[i];
-
-        // PromptResponse 跳过
         if matches!(entry.update_type, OutputType::PromptResponse) {
             i += 1;
             continue;
         }
 
-        let new_role = if matches!(entry.update_type, OutputType::UserPrompt) {
-            "user"
-        } else {
-            "agent"
-        };
+        let new_role = if matches!(entry.update_type, OutputType::UserPrompt) { "user" } else { "agent" };
+        state.switch_role_if_needed(new_role, agent_name);
 
-        // 角色切换或交互点后 → 关旧 msg、开新 msg
-        if new_role != role || after_interaction {
-            if !role.is_empty() {
-                println!("</msg>\n");
-            }
-            if new_role == "user" {
-                println!("<msg role=\"user\">");
-            } else {
-                println!("<msg role=\"agent\" name=\"{}\">", agent_name);
-            }
-            role = new_role;
-            has_content = false;
-            prev_was_text = false;
-        }
-        after_interaction = false;
-
-        // 用户 prompt
-        if matches!(entry.update_type, OutputType::UserPrompt) {
-            println!("{}", entry.content.trim());
-            has_content = true;
-            i += 1;
-            continue;
-        }
-
-        // agent 内容
         match entry.update_type {
+            OutputType::UserPrompt => {
+                println!("{}", entry.content.trim());
+                state.has_content = true;
+                i += 1;
+            }
             OutputType::AgentMessage | OutputType::AgentThought => {
-                let disc = std::mem::discriminant(&entry.update_type);
-                let mut text = String::new();
-                while i < entries.len()
-                    && std::mem::discriminant(&entries[i].update_type) == disc
-                {
-                    text.push_str(&entries[i].content);
-                    i += 1;
-                }
-                let text = text.trim();
-                if text.is_empty() {
-                    continue;
-                }
-                if has_content {
-                    println!();
-                }
-                println!("{}", text);
-                has_content = true;
-                prev_was_text = true;
+                i += print_text_run(entries, i, &mut state);
             }
             _ => {
-                if prev_was_text {
-                    println!();
-                }
+                if state.prev_was_text { println!(); }
                 println!("[{}] {}", entry.update_type.label(), entry.content);
-                prev_was_text = false;
-                has_content = true;
-                after_interaction = matches!(entry.update_type, OutputType::PermissionRequest);
+                state.prev_was_text = false;
+                state.has_content = true;
+                state.after_interaction = matches!(entry.update_type, OutputType::PermissionRequest);
                 i += 1;
             }
         }
     }
 
-    // 关闭最后一个 msg
-    if !role.is_empty() {
+    if !state.role.is_empty() {
         println!("</msg>");
     }
+}
+
+#[derive(Default)]
+struct MsgState {
+    role: String,
+    has_content: bool,
+    prev_was_text: bool,
+    after_interaction: bool,
+}
+
+impl MsgState {
+    fn switch_role_if_needed(&mut self, new_role: &str, agent_name: &str) {
+        if new_role == self.role && !self.after_interaction {
+            return;
+        }
+        if !self.role.is_empty() {
+            println!("</msg>\n");
+        }
+        if new_role == "user" {
+            println!("<msg role=\"user\">");
+        } else {
+            println!("<msg role=\"agent\" name=\"{}\">", agent_name);
+        }
+        self.role = new_role.to_string();
+        self.has_content = false;
+        self.prev_was_text = false;
+        self.after_interaction = false;
+    }
+}
+
+/// 合并连续同类型 chunk，返回消费的条目数
+fn print_text_run(entries: &[OutputEntry], start: usize, state: &mut MsgState) -> usize {
+    let disc = std::mem::discriminant(&entries[start].update_type);
+    let mut text = String::new();
+    let mut count = 0;
+    for e in &entries[start..] {
+        if std::mem::discriminant(&e.update_type) != disc { break; }
+        text.push_str(&e.content);
+        count += 1;
+    }
+    let text = text.trim();
+    if !text.is_empty() {
+        if state.has_content { println!(); }
+        println!("{}", text);
+        state.has_content = true;
+        state.prev_was_text = true;
+    }
+    count
 }
 
 // ==================== 单元测试 ====================

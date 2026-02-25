@@ -26,15 +26,15 @@ pub enum AgentStatus {
     Stopping,
 }
 
-impl AgentStatus {
-    pub fn display(&self) -> &str {
+impl std::fmt::Display for AgentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Starting => "starting",
-            Self::Idle => "idle",
-            Self::Running => "running",
-            Self::WaitingPermission => "waiting_permission",
-            Self::Error(_) => "error",
-            Self::Stopping => "stopping",
+            Self::Starting => f.write_str("starting"),
+            Self::Idle => f.write_str("idle"),
+            Self::Running => f.write_str("running"),
+            Self::WaitingPermission => f.write_str("waiting_permission"),
+            Self::Error(_) => f.write_str("error"),
+            Self::Stopping => f.write_str("stopping"),
         }
     }
 }
@@ -102,7 +102,7 @@ pub struct AgentHandle {
     pub agent_type: String,
     pub cwd: PathBuf,
     pub extra_args: Vec<String>,
-    pub status: Arc<Mutex<AgentStatus>>,
+    pub status: Arc<std::sync::Mutex<AgentStatus>>,
     pub started_at: Instant,
     pub output_buffer: Arc<Mutex<OutputRingBuffer>>,
     pub pending_permissions: Arc<Mutex<VecDeque<PendingPermission>>>,
@@ -116,11 +116,11 @@ pub struct AgentHandle {
 
 impl AgentHandle {
     pub fn set_status(&self, s: AgentStatus) {
-        *self.status.try_lock().expect("status lock contention") = s;
+        *self.status.lock().unwrap() = s;
     }
 
     pub fn get_status(&self) -> AgentStatus {
-        self.status.try_lock().expect("status lock contention").clone()
+        self.status.lock().unwrap().clone()
     }
 
     pub fn to_summary(&self) -> AgentSummary {
@@ -143,7 +143,7 @@ impl AgentHandle {
             name: self.name.clone(),
             agent_type: self.agent_type.clone(),
             cwd: self.cwd.display().to_string(),
-            status: self.get_status().display().to_string(),
+            status: self.get_status().to_string(),
             uptime: format!("{}m {}s", mins, secs),
             prompt_count: self.prompt_count,
             pending_permissions: pending,
@@ -197,16 +197,15 @@ pub async fn spawn_agent(
             if n == 0 {
                 break;
             }
-            if let Ok(s) = std::str::from_utf8(&buf[..n]) {
-                let mut sb = stderr_buf2.lock().await;
-                if sb.len() < STDERR_LIMIT {
-                    sb.push_str(s);
-                }
+            let s = String::from_utf8_lossy(&buf[..n]);
+            let mut sb = stderr_buf2.lock().await;
+            if sb.len() < STDERR_LIMIT {
+                sb.push_str(&s);
             }
         }
     });
 
-    let status = Arc::new(Mutex::new(AgentStatus::Starting));
+    let status = Arc::new(std::sync::Mutex::new(AgentStatus::Starting));
     let output_buffer = Arc::new(Mutex::new(OutputRingBuffer::new(buf_size)));
     let pending_permissions = Arc::new(Mutex::new(VecDeque::new()));
     let err_tx = output_tx.clone();
@@ -267,7 +266,7 @@ pub async fn spawn_agent(
         .await
         .context("ACP new_session() failed")?;
 
-    *status.lock().await = AgentStatus::Idle;
+    *status.lock().unwrap() = AgentStatus::Idle;
 
     Ok(AgentHandle {
         name,
@@ -485,12 +484,12 @@ mod tests {
 
     #[test]
     fn status_display_all_variants() {
-        assert_eq!(AgentStatus::Starting.display(), "starting");
-        assert_eq!(AgentStatus::Idle.display(), "idle");
-        assert_eq!(AgentStatus::Running.display(), "running");
-        assert_eq!(AgentStatus::WaitingPermission.display(), "waiting_permission");
-        assert_eq!(AgentStatus::Error("oops".into()).display(), "error");
-        assert_eq!(AgentStatus::Stopping.display(), "stopping");
+        assert_eq!(AgentStatus::Starting.to_string(), "starting");
+        assert_eq!(AgentStatus::Idle.to_string(), "idle");
+        assert_eq!(AgentStatus::Running.to_string(), "running");
+        assert_eq!(AgentStatus::WaitingPermission.to_string(), "waiting_permission");
+        assert_eq!(AgentStatus::Error("oops".into()).to_string(), "error");
+        assert_eq!(AgentStatus::Stopping.to_string(), "stopping");
     }
 
     #[test]
@@ -500,7 +499,7 @@ mod tests {
             agent_type: "mock".into(),
             cwd: PathBuf::from("/tmp"),
             extra_args: vec![],
-            status: Arc::new(Mutex::new(AgentStatus::Running)),
+            status: Arc::new(std::sync::Mutex::new(AgentStatus::Running)),
             started_at: Instant::now(),
             output_buffer: Arc::new(Mutex::new(OutputRingBuffer::new(10))),
             pending_permissions: Arc::new(Mutex::new(VecDeque::new())),
@@ -525,7 +524,7 @@ mod tests {
             agent_type: "claude".into(),
             cwd: PathBuf::from("/home"),
             extra_args: vec!["--fast".into()],
-            status: Arc::new(Mutex::new(AgentStatus::Idle)),
+            status: Arc::new(std::sync::Mutex::new(AgentStatus::Idle)),
             started_at: Instant::now(),
             output_buffer: Arc::new(Mutex::new(OutputRingBuffer::new(10))),
             pending_permissions: Arc::new(Mutex::new(VecDeque::new())),

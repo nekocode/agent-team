@@ -60,14 +60,14 @@ fn check_update(current: &str) -> Result<Option<String>> {
 
 /// 执行自更新
 pub fn run_update() -> Result<()> {
-    eprintln!("Checking for updates...");
+    println!("Checking for updates...");
 
     match check_update(VERSION)? {
         None => {
-            eprintln!("Already up to date ({})", VERSION);
+            println!("Already up to date ({})", VERSION);
         }
         Some(latest) => {
-            eprintln!("Updating agent-team: {} -> {}", VERSION, latest);
+            println!("Updating agent-team: {} -> {}", VERSION, latest);
 
             let status = std::process::Command::new("npm")
                 .args(["install", "-g", "agent-team@latest"])
@@ -78,7 +78,7 @@ pub fn run_update() -> Result<()> {
                 bail!("npm install failed");
             }
 
-            eprintln!("Updated successfully!");
+            println!("Updated successfully!");
         }
     }
 

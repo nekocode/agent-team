@@ -1,10 +1,7 @@
 pub mod team_client;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn client_side_connection_is_send() {
-        fn assert_send<T: Send>() {}
-        assert_send::<agent_client_protocol::ClientSideConnection>();
-    }
+// 编译期断言：ClientSideConnection 必须 Send（无需 #[test]，编译即检查）
+fn _assert_send() {
+    fn check<T: Send>() {}
+    check::<agent_client_protocol::ClientSideConnection>();
 }

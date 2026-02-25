@@ -4,7 +4,7 @@ use std::path::PathBuf;
 // ==================== Session 协议 ====================
 // 每个 session 管一个 agent，请求无需 name 字段
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SessionRequest {
     GetStatus,
@@ -123,6 +123,18 @@ impl OutputType {
             Self::ConfigUpdate => "config",
             Self::Error => "error",
         }
+    }
+}
+
+impl std::fmt::Display for OutputType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+impl std::fmt::Display for SessionRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
     }
 }
 

@@ -51,12 +51,12 @@ async fn run_async(cli: Cli) -> Result<()> {
                 ))?;
 
             // 适配器提示：检测命令是否在 PATH
-            if let Some(hint) = crate::config::adapter_hint(&agent_type) {
+            if let Some((adapter, install)) = crate::config::adapter_hint(&agent_type) {
                 if !command_exists(&type_config.command) {
                     eprintln!(
                         "Adapter '{}' not found in PATH.\n\
                          Install: {}\n",
-                        hint.adapter, hint.install,
+                        adapter, install,
                     );
                     std::process::exit(1);
                 }
@@ -97,11 +97,7 @@ async fn run_async(cli: Cli) -> Result<()> {
                     println!("No agents running");
                     return Ok(());
                 }
-                // 并行 Shutdown
-                let futs: Vec<_> = names.iter().map(|n| async {
-                    (n.as_str(), client::send(&config, n, SessionRequest::Shutdown).await)
-                }).collect();
-                let results = futures::future::join_all(futs).await;
+                let results = broadcast_all(&config, &names, || SessionRequest::Shutdown).await;
                 let mut count = 0;
                 for (n, result) in results {
                     match result {
@@ -128,11 +124,7 @@ async fn run_async(cli: Cli) -> Result<()> {
                 println!("No agents running");
                 return Ok(());
             }
-            // 并行 GetStatus
-            let futs: Vec<_> = names.iter().map(|n| async {
-                (n.as_str(), client::send(&config, n, SessionRequest::GetStatus).await)
-            }).collect();
-            let results = futures::future::join_all(futs).await;
+            let results = broadcast_all(&config, &names, || SessionRequest::GetStatus).await;
             let mut summaries = vec![];
             for (n, result) in results {
                 match result {
@@ -267,14 +259,7 @@ async fn prompt_and_wait(
     // 无超时限制 — AI 输出可能很长，由用户 Ctrl+C 中止
     loop {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let resp = match conn.send(SessionRequest::GetStatus).await {
-            Ok(r) => r,
-            Err(_) => {
-                // 连接断开，重连
-                conn = client::SessionClient::connect(config, name).await?;
-                conn.send(SessionRequest::GetStatus).await?
-            }
-        };
+        let resp = send_or_reconnect(&mut conn, config, name, SessionRequest::GetStatus).await?;
         if let SessionResponse::Status { ref summary } = resp {
             match summary.status.as_str() {
                 "idle" | "error" | "waiting_permission" => break,
@@ -285,15 +270,43 @@ async fn prompt_and_wait(
 
     // 取最后一条消息（agent 回复 / 权限请求）
     let req = SessionRequest::GetOutput { last: 1, agent_only: false };
-    let resp = match conn.send(req).await {
-        Ok(r) => r,
-        Err(_) => {
-            conn = client::SessionClient::connect(config, name).await?;
-            conn.send(SessionRequest::GetOutput { last: 1, agent_only: false }).await?
-        }
-    };
+    let resp = send_or_reconnect(&mut conn, config, name, req).await?;
     display::print_session_response(&resp);
     Ok(())
+}
+
+// ==================== 通信辅助 ====================
+
+/// C3: 发送请求，断线自动重连
+async fn send_or_reconnect(
+    conn: &mut client::SessionClient,
+    config: &TeamConfig,
+    name: &str,
+    req: SessionRequest,
+) -> Result<SessionResponse> {
+    match conn.send(req.clone()).await {
+        Ok(r) => Ok(r),
+        Err(_) => {
+            *conn = client::SessionClient::connect(config, name).await?;
+            conn.send(req).await
+        }
+    }
+}
+
+/// C4: 向所有 session 并行发送同一请求
+async fn broadcast_all<'a>(
+    config: &'a TeamConfig,
+    names: &'a [String],
+    req_fn: impl Fn() -> SessionRequest,
+) -> Vec<(&'a str, Result<SessionResponse>)> {
+    let futs: Vec<_> = names
+        .iter()
+        .map(|n| {
+            let req = req_fn();
+            async move { (n.as_str(), client::send(config, n, req).await) }
+        })
+        .collect();
+    futures::future::join_all(futs).await
 }
 
 // ==================== 后台启动 ====================
@@ -356,13 +369,13 @@ fn launch_background(
             "Agent '{}' started (pid: {}, log: {})",
             name, child.id(), log_path.display(),
         );
+        Ok(())
     } else {
-        eprintln!(
-            "Warning: Agent '{}' may not have started (check {})",
+        anyhow::bail!(
+            "Agent '{}' failed to start within 10s (check {})",
             name, log_path.display(),
-        );
+        )
     }
-    Ok(())
 }
 
 // ==================== 工具函数 ====================
@@ -370,8 +383,9 @@ fn launch_background(
 fn command_exists(cmd: &str) -> bool {
     #[cfg(unix)]
     {
-        std::process::Command::new("sh")
-            .args(["-c", &format!("command -v {}", cmd)])
+        // C5: 用 which 代替 sh -c，避免 shell 注入
+        std::process::Command::new("which")
+            .arg(cmd)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
