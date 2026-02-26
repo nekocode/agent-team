@@ -1,5 +1,7 @@
 # agent-team
 
+[![npm version](https://img.shields.io/npm/v/agent-team)](https://www.npmjs.com/package/agent-team)
+
 多 Agent CLI 编排器，基于 [ACP](https://agentclientprotocol.com/get-started/introduction)（Agent Client Protocol）协议。在一个终端统一管理 20+ 编程 Agent。
 
 [English](README.md)

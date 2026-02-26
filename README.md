@@ -1,5 +1,7 @@
 # agent-team
 
+[![npm version](https://img.shields.io/npm/v/agent-team)](https://www.npmjs.com/package/agent-team)
+
 A multi-agent CLI orchestrator via the [ACP](https://agentclientprotocol.com/get-started/introduction) (Agent Client Protocol). Manage 20+ coding agents from one terminal.
 
 [中文文档](README.zh-CN.md)
